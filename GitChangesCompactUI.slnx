@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="GitChangesCompactUI/GitChangesCompactUI.csproj">
+    <Deploy />
+  </Project>
+</Solution>
