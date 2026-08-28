@@ -9,6 +9,11 @@
     <UseWPF>true</UseWPF>
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <DeployExtension Condition="'$(BuildingInsideVisualStudio)' == 'true'">true</DeployExtension>
+    <CreateVsixContainer>true</CreateVsixContainer>
+    <StartAction>Program</StartAction>
+    <StartProgram>$(DevEnvDir)devenv.exe</StartProgram>
+    <StartArguments>/rootsuffix Exp</StartArguments>
   </PropertyGroup>
   <ItemGroup>
     <ProjectCapability Include="CreateVsixContainer" />
