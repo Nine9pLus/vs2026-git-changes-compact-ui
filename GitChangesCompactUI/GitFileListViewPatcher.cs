@@ -11,7 +11,7 @@ namespace GitChangesCompactUI
 {
     public static class GitFileListViewPatcher
     {
-        private const double TargetItemHeight = 20.0;
+        private const double TargetItemHeight = 22.0;
         private const double TargetContentMinHeight = 14.0;
         private static bool _isInitialized;
         private static bool _fluentSizesPatched;
@@ -24,7 +24,7 @@ namespace GitChangesCompactUI
             if (_isInitialized) return;
             _isInitialized = true;
 
-            // 【核心】透過反射修改 FluentSizes 靜態欄位，從源頭解決行高 24px → 20px
+            // 【核心】透過反射修改 FluentSizes 靜態欄位，從源頭解決行高 24px → 22px
             PatchFluentSizesViaReflection();
 
             // 註冊 ListView/TreeView 的 ClassHandler（邊框 + 容器重建）
@@ -142,6 +142,7 @@ namespace GitChangesCompactUI
             control.BorderThickness = new Thickness(1);
             control.BorderBrush = Vs2022BorderBrush;
             control.Margin = new Thickness(0, 2, 0, 4);
+            control.Padding = new Thickness(0, 2, 0, 2);
         }
 
         /// <summary>
