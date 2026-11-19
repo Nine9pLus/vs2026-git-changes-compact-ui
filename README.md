@@ -7,7 +7,7 @@
 ## 🌟 特色功能 (Features)
 
 1. **緊湊檔案列表行高 (22px Compact Row Height)**
-   - 透過動態反射修補 `FluentSizes.ControlMinHeight`，將 VS2026 預設 26px 行高壓縮至最佳視覺比例的 **22px**。
+   - 繼承 Visual Studio 的清單樣式，將「變更」與「暫存變更」的檔案列固定為 **22px**，與方案總管的精簡間距設定各自獨立。
    - 完整保留**左側紫色選取指示條**與**項目的 Fluent 圓角樣式**。
 
 2. **優化 Commit 訊息輸入框 (Compact Commit Message Box)**

@@ -1,20 +1,19 @@
-﻿#pragma warning disable VSTHRD001, VSTHRD110
+#pragma warning disable VSTHRD001, VSTHRD110
 using System;
-using System.Reflection;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using System.Windows.Threading;
 
 namespace GitChangesCompactUI
 {
     public static class GitFileListViewPatcher
     {
         private const double TargetItemHeight = 22.0;
-        private const double TargetContentMinHeight = 14.0;
         private static bool _isInitialized;
-        private static bool _fluentSizesPatched;
+        private static readonly DependencyPropertyDescriptor ItemContainerStyleDescriptor =
+            DependencyPropertyDescriptor.FromProperty(ItemsControl.ItemContainerStyleProperty, typeof(ListView));
 
         // VS 2022 風格暗色邊框顏色 (#3F3F46)
         private static readonly SolidColorBrush Vs2022BorderBrush = new SolidColorBrush(Color.FromRgb(63, 63, 70));
@@ -24,10 +23,6 @@ namespace GitChangesCompactUI
             if (_isInitialized) return;
             _isInitialized = true;
 
-            // 【核心】透過反射修改 FluentSizes 靜態欄位，從源頭解決行高 24px → 22px
-            PatchFluentSizesViaReflection();
-
-            // 註冊 ListView/TreeView 的 ClassHandler（邊框 + 項目高度）
             EventManager.RegisterClassHandler(
                 typeof(ListView),
                 FrameworkElement.LoadedEvent,
@@ -38,18 +33,6 @@ namespace GitChangesCompactUI
                 typeof(TreeView),
                 FrameworkElement.LoadedEvent,
                 new RoutedEventHandler(OnItemsControlLoaded),
-                handledEventsToo: true);
-
-            EventManager.RegisterClassHandler(
-                typeof(ListViewItem),
-                FrameworkElement.LoadedEvent,
-                new RoutedEventHandler(OnItemLoaded),
-                handledEventsToo: true);
-
-            EventManager.RegisterClassHandler(
-                typeof(TreeViewItem),
-                FrameworkElement.LoadedEvent,
-                new RoutedEventHandler(OnItemLoaded),
                 handledEventsToo: true);
 
             // 註冊 TextBox 的 ClassHandler（縮窄 Commit 訊息輸入框）
@@ -67,114 +50,66 @@ namespace GitChangesCompactUI
                 handledEventsToo: true);
 
             // 正式 VS 可能在套件背景載入完成前就已建立 Git 視窗
-            Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+            foreach (PresentationSource source in PresentationSource.CurrentSources)
             {
-                foreach (PresentationSource source in PresentationSource.CurrentSources)
-                {
-                    if (source.RootVisual != null) ApplyExistingItemHeights(source.RootVisual);
-                }
-            }));
-        }
-
-        #region FluentSizes 反射修補
-
-        /// <summary>
-        /// 【核心】透過反射修改 FluentSizes 和 FluentSpacings 的靜態欄位值。
-        /// VS2026 Fluent 主題的 ControlTemplate 透過 {x:Static FluentSizes.ControlMinHeight} 綁定行高，
-        /// 原始值 ControlMinHeight=24 + XSNudge Margin=3,3,3,3 → 實際佔高 ≈ 26px。
-        /// 直接從源頭將 ControlMinHeight 改為 22，保留水平 3px 選取條空間，上/下 margin 清零。
-        /// </summary>
-        private static void PatchFluentSizesViaReflection()
-        {
-            try
-            {
-                Assembly? targetAssembly = null;
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    if (asm.FullName != null && asm.FullName.Contains("Microsoft.TeamFoundation.Controls"))
-                    {
-                        targetAssembly = asm;
-                        break;
-                    }
-                }
-
-                if (targetAssembly == null) return;
-
-                PatchStaticField(targetAssembly, "Microsoft.TeamFoundation.Controls.WPF.FluentSizes",
-                    "ControlMinHeight", TargetItemHeight);
-                PatchStaticField(targetAssembly, "Microsoft.TeamFoundation.Controls.WPF.FluentSizes",
-                    "ContentMinHeight", TargetContentMinHeight);
-                // 修改 FluentSpacings: 只清除垂直方向 margin (top=0, bottom=0)，保留水平方向 3px，還原左側紫色選取指示條
-                PatchStaticField(targetAssembly, "Microsoft.TeamFoundation.Controls.WPF.FluentSpacings",
-                    "XSNudge", new Thickness(3, 0, 3, 0));
-                PatchStaticField(targetAssembly, "Microsoft.TeamFoundation.Controls.WPF.FluentSpacings",
-                    "XSNudgeInvert", new Thickness(-3, 0, -3, 0));
-
-                _fluentSizesPatched = true;
+                if (source.RootVisual != null) ApplyExistingListStyles(source.RootVisual);
             }
-            catch { }
         }
 
-        private static void PatchStaticField(Assembly asm, string typeName, string fieldName, object newValue)
-        {
-            try
-            {
-                Type? type = asm.GetType(typeName);
-                if (type == null) return;
-
-                FieldInfo? field = type.GetField(fieldName,
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                field?.SetValue(null, newValue);
-            }
-            catch { }
-        }
-
-        /// <summary>
-        /// 防禦性：如果 Assembly 在 Initialize 時還沒載入，在第一個控制項 Loaded 時補修。
-        /// </summary>
-        private static void EnsureFluentSizesPatched()
-        {
-            if (_fluentSizesPatched) return;
-            PatchFluentSizesViaReflection();
-        }
-
-        #endregion
-
-        #region ListView / TreeView 邊框 + 項目高度
+        #region Git 清單樣式
 
         private static void OnItemsControlLoaded(object sender, RoutedEventArgs e)
         {
             if (sender is Control control && IsInsideGitChangesWindow(control))
-            {
-                EnsureFluentSizesPatched();
-                ApplyListBorder(control);
+                ApplyListStyle(control);
+        }
 
-                // 直接修補現有容器，不依賴捲動或 Items.Refresh 重新建立樣板
-                control.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
-                {
-                    ApplyExistingItemHeights(control);
-                }));
+        private static void ApplyListStyle(Control control)
+        {
+            ApplyListBorder(control);
+            if (control is not ListView list || !IsGitChangeSection(list)) return;
+
+            // VS 切換清單檢視時會指派新的官方樣式。
+            ItemContainerStyleDescriptor.RemoveValueChanged(list, ApplyRowStyle);
+            ApplyRowStyle(list, EventArgs.Empty);
+            ItemContainerStyleDescriptor.AddValueChanged(list, ApplyRowStyle);
+            list.Unloaded -= OnListUnloaded;
+            list.Unloaded += OnListUnloaded;
+        }
+
+        private static void ApplyRowStyle(object sender, EventArgs e)
+        {
+            var list = (ListView)sender;
+            if (list.ItemContainerStyle is Style style && style is not GitRowStyle)
+                list.SetCurrentValue(ItemsControl.ItemContainerStyleProperty, new GitRowStyle(style));
+        }
+
+        private sealed class GitRowStyle : Style
+        {
+            public GitRowStyle(Style original) : base(original.TargetType, original)
+            {
+                Setters.Add(new Setter(FrameworkElement.MinHeightProperty, TargetItemHeight));
+                Setters.Add(new Setter(FrameworkElement.MaxHeightProperty, TargetItemHeight));
+                Setters.Add(new Setter(FrameworkElement.HeightProperty, TargetItemHeight));
             }
         }
 
-        private static void OnItemLoaded(object sender, RoutedEventArgs e)
+        private static void OnListUnloaded(object sender, RoutedEventArgs e)
         {
-            if (sender is Control item && IsInsideGitChangesWindow(item))
-            {
-                FrameworkElement? row = item;
-                if (item is TreeViewItem)
-                {
-                    // TreeViewItem 包含子節點，只限制標題列，避免裁切展開的內容
-                    item.ApplyTemplate();
-                    row = item.Template?.FindName("PART_Header", item) as FrameworkElement;
-                }
+            var list = (ListView)sender;
+            ItemContainerStyleDescriptor.RemoveValueChanged(list, ApplyRowStyle);
+            list.Unloaded -= OnListUnloaded;
+        }
 
-                if (row == null) return;
-                row.MinHeight = TargetItemHeight;
-                row.MaxHeight = TargetItemHeight;
-                row.Height = TargetItemHeight;
-                row.Margin = new Thickness(row.Margin.Left, 0, row.Margin.Right, 0);
+        private static bool IsGitChangeSection(DependencyObject element)
+        {
+            for (DependencyObject? current = element; current != null; current = VisualTreeHelper.GetParent(current))
+            {
+                if (current.GetType().FullName == "Microsoft.TeamFoundation.Git.Provider.PendingChanges.ChangesSectionView")
+                    return true;
             }
+
+            return false;
         }
 
         /// <summary>
@@ -188,23 +123,13 @@ namespace GitChangesCompactUI
             control.Padding = new Thickness(0, 2, 0, 2);
         }
 
-        private static void ApplyExistingItemHeights(DependencyObject element)
+        private static void ApplyExistingListStyles(DependencyObject element)
         {
-            if (element is Control control && IsInsideGitChangesWindow(control))
-            {
-                if (control is ListView || control is TreeView)
-                {
-                    EnsureFluentSizesPatched();
-                    ApplyListBorder(control);
-                }
-                else if (control is ListViewItem || control is TreeViewItem)
-                    OnItemLoaded(control, new RoutedEventArgs());
-            }
+            if (element is ListView or TreeView)
+                OnItemsControlLoaded(element, new RoutedEventArgs());
 
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
-            {
-                ApplyExistingItemHeights(VisualTreeHelper.GetChild(element, i));
-            }
+                ApplyExistingListStyles(VisualTreeHelper.GetChild(element, i));
         }
 
         #endregion
