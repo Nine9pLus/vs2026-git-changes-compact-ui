@@ -3,7 +3,7 @@
   <Metadata>
     <Identity Id="GitChangesCompactUI.116f7a60-f0a4-445f-b59e-0ef350844960" Version="1.0" Language="zh-TW" Publisher="GitChangesCompactUI" />
     <DisplayName>Git Changes Compact UI (VS2022 Style)</DisplayName>
-    <Description>還原 VS 2022 經典緊湊風格的 Git 變更視窗（包含檔案列高緊湊化、訊息輸入框縮窄、變更與暫存清單邊框）。</Description>
+    <Description>還原 VS 2022 經典緊湊風格的 Git 變更視窗（包含檔案列高緊湊化為 22px、訊息輸入框縮窄、變更與暫存清單邊框與內距）。</Description>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.14, )">

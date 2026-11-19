@@ -9,7 +9,8 @@
     <UseWPF>true</UseWPF>
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
-    <DeployExtension Condition="'$(BuildingInsideVisualStudio)' == 'true'">true</DeployExtension>
+    <DeployExtension Condition="'$(Configuration)' == 'Debug' and '$(BuildingInsideVisualStudio)' == 'true'">true</DeployExtension>
+    <DeployExtension Condition="'$(Configuration)' == 'Release'">false</DeployExtension>
     <CreateVsixContainer>true</CreateVsixContainer>
     <StartAction>Program</StartAction>
     <StartProgram>$(DevEnvDir)devenv.exe</StartProgram>

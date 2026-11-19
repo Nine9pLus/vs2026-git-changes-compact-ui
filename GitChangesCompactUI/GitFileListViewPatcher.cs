@@ -61,7 +61,7 @@ namespace GitChangesCompactUI
         /// 【核心】透過反射修改 FluentSizes 和 FluentSpacings 的靜態欄位值。
         /// VS2026 Fluent 主題的 ControlTemplate 透過 {x:Static FluentSizes.ControlMinHeight} 綁定行高，
         /// 原始值 ControlMinHeight=24 + XSNudge Margin=3,3,3,3 → 實際佔高 ≈ 26px。
-        /// 直接從源頭將 ControlMinHeight 改為 20，XSNudge margin 清零。
+        /// 直接從源頭將 ControlMinHeight 改為 22，保留水平 3px 選取條空間，上/下 margin 清零。
         /// </summary>
         private static void PatchFluentSizesViaReflection()
         {
@@ -129,7 +129,7 @@ namespace GitChangesCompactUI
                 ApplyListBorder(control);
 
                 // 在所有修補完成後，透過微捲動強制 VirtualizingStackPanel 重建容器
-                // 新容器會使用已修補的 FluentSizes 值（ControlMinHeight=20），從源頭正確渲染
+                // 新容器會使用已修補的 FluentSizes 值（ControlMinHeight=22），從源頭正確渲染
                 control.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
                 {
                     ForceContainerRegeneration(control);
@@ -137,6 +137,9 @@ namespace GitChangesCompactUI
             }
         }
 
+        /// <summary>
+        /// 處理清單容器（TreeView / ListView），加上邊框與上下 2px 內距
+        /// </summary>
         private static void ApplyListBorder(Control control)
         {
             control.BorderThickness = new Thickness(1);
@@ -147,7 +150,7 @@ namespace GitChangesCompactUI
 
         /// <summary>
         /// 透過微捲動強制 VirtualizingStackPanel 丟棄並重建所有項目容器。
-        /// 重建後的容器使用已修補的 FluentSizes.ControlMinHeight=20，從源頭正確渲染。
+        /// 重建後的容器使用已修補的 FluentSizes.ControlMinHeight=22，從源頭正確渲染。
         /// </summary>
         private static void ForceContainerRegeneration(Control control)
         {
