@@ -1,4 +1,4 @@
-#pragma warning disable VSTHRD001, VSTHRD110
+﻿#pragma warning disable VSTHRD001, VSTHRD110
 using System;
 using System.Reflection;
 using System.Windows;
@@ -27,7 +27,7 @@ namespace GitChangesCompactUI
             // 【核心】透過反射修改 FluentSizes 靜態欄位，從源頭解決行高 24px → 22px
             PatchFluentSizesViaReflection();
 
-            // 註冊 ListView/TreeView 的 ClassHandler（邊框 + 容器重建）
+            // 註冊 ListView/TreeView 的 ClassHandler（邊框 + 項目高度）
             EventManager.RegisterClassHandler(
                 typeof(ListView),
                 FrameworkElement.LoadedEvent,
@@ -38,6 +38,18 @@ namespace GitChangesCompactUI
                 typeof(TreeView),
                 FrameworkElement.LoadedEvent,
                 new RoutedEventHandler(OnItemsControlLoaded),
+                handledEventsToo: true);
+
+            EventManager.RegisterClassHandler(
+                typeof(ListViewItem),
+                FrameworkElement.LoadedEvent,
+                new RoutedEventHandler(OnItemLoaded),
+                handledEventsToo: true);
+
+            EventManager.RegisterClassHandler(
+                typeof(TreeViewItem),
+                FrameworkElement.LoadedEvent,
+                new RoutedEventHandler(OnItemLoaded),
                 handledEventsToo: true);
 
             // 註冊 TextBox 的 ClassHandler（縮窄 Commit 訊息輸入框）
@@ -53,6 +65,15 @@ namespace GitChangesCompactUI
                 FrameworkElement.LoadedEvent,
                 new RoutedEventHandler(OnButtonLoaded),
                 handledEventsToo: true);
+
+            // 正式 VS 可能在套件背景載入完成前就已建立 Git 視窗
+            Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+            {
+                foreach (PresentationSource source in PresentationSource.CurrentSources)
+                {
+                    if (source.RootVisual != null) ApplyExistingItemHeights(source.RootVisual);
+                }
+            }));
         }
 
         #region FluentSizes 反射修補
@@ -119,7 +140,7 @@ namespace GitChangesCompactUI
 
         #endregion
 
-        #region ListView / TreeView 邊框 + 容器重建
+        #region ListView / TreeView 邊框 + 項目高度
 
         private static void OnItemsControlLoaded(object sender, RoutedEventArgs e)
         {
@@ -128,12 +149,31 @@ namespace GitChangesCompactUI
                 EnsureFluentSizesPatched();
                 ApplyListBorder(control);
 
-                // 在所有修補完成後，透過微捲動強制 VirtualizingStackPanel 重建容器
-                // 新容器會使用已修補的 FluentSizes 值（ControlMinHeight=22），從源頭正確渲染
+                // 直接修補現有容器，不依賴捲動或 Items.Refresh 重新建立樣板
                 control.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
                 {
-                    ForceContainerRegeneration(control);
+                    ApplyExistingItemHeights(control);
                 }));
+            }
+        }
+
+        private static void OnItemLoaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is Control item && IsInsideGitChangesWindow(item))
+            {
+                FrameworkElement? row = item;
+                if (item is TreeViewItem)
+                {
+                    // TreeViewItem 包含子節點，只限制標題列，避免裁切展開的內容
+                    item.ApplyTemplate();
+                    row = item.Template?.FindName("PART_Header", item) as FrameworkElement;
+                }
+
+                if (row == null) return;
+                row.MinHeight = TargetItemHeight;
+                row.MaxHeight = TargetItemHeight;
+                row.Height = TargetItemHeight;
+                row.Margin = new Thickness(row.Margin.Left, 0, row.Margin.Right, 0);
             }
         }
 
@@ -148,28 +188,23 @@ namespace GitChangesCompactUI
             control.Padding = new Thickness(0, 2, 0, 2);
         }
 
-        /// <summary>
-        /// 透過微捲動強制 VirtualizingStackPanel 丟棄並重建所有項目容器。
-        /// 重建後的容器使用已修補的 FluentSizes.ControlMinHeight=22，從源頭正確渲染。
-        /// </summary>
-        private static void ForceContainerRegeneration(Control control)
+        private static void ApplyExistingItemHeights(DependencyObject element)
         {
-            try
+            if (element is Control control && IsInsideGitChangesWindow(control))
             {
-                var scrollViewer = FindChildOfType<ScrollViewer>(control);
-                if (scrollViewer != null && scrollViewer.ScrollableHeight > 0)
+                if (control is ListView || control is TreeView)
                 {
-                    double originalOffset = scrollViewer.VerticalOffset;
-                    scrollViewer.ScrollToVerticalOffset(originalOffset + 1);
-                    scrollViewer.UpdateLayout();
-                    scrollViewer.ScrollToVerticalOffset(originalOffset);
+                    EnsureFluentSizesPatched();
+                    ApplyListBorder(control);
                 }
-                else if (control is ItemsControl ic)
-                {
-                    ic.Items.Refresh();
-                }
+                else if (control is ListViewItem || control is TreeViewItem)
+                    OnItemLoaded(control, new RoutedEventArgs());
             }
-            catch { }
+
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+            {
+                ApplyExistingItemHeights(VisualTreeHelper.GetChild(element, i));
+            }
         }
 
         #endregion
@@ -297,19 +332,6 @@ namespace GitChangesCompactUI
             catch { }
 
             return false;
-        }
-
-        private static T? FindChildOfType<T>(DependencyObject parent) where T : DependencyObject
-        {
-            int count = VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < count; i++)
-            {
-                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T found) return found;
-                T? result = FindChildOfType<T>(child);
-                if (result != null) return result;
-            }
-            return null;
         }
 
         #endregion
